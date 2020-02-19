@@ -2,7 +2,7 @@
 -- Minetest :: Advanced Rangefinder Mod v1.0 (finder)
 --
 -- See README.txt for licensing and other information.
--- Copyright (c) 2016-2020, Leslie E. Krause
+-- Copyright (c) 2020, Leslie E. Krause
 --
 -- ./games/minetest_game/mods/finder/init.lua
 --------------------------------------------------------
@@ -20,6 +20,25 @@ local function locator( pos, size, color )
 		vertical = true,
 		texture = "wool_" .. color .. ".png",
 	} )
+end
+
+local function open_exporter( player_name, results )
+	local output = ""
+
+	for i, v in ipairs( results ) do
+		output = output .. string.format( "%s %s at (%0.1f,%0.1f,%0.1f)\n",
+			( { player = "Player", entity = "Entity" } )[ v.type ] or "Node", v.name, v.pos.x, v.pos.y, v.pos.z )
+	end
+
+	local function get_formspec( )
+		local formspec = "size[6.5,8.5]"
+			.. "textarea[0.5,0.5;6.0,8.0;buffer;Search results;" ..
+				minetest.formspec_escape( output ) .. "]"
+			.. "button_exit[2.0,8.0;2.0,0.3;close;Close]"
+		return formspec
+	end
+
+	minetest.create_form( nil, player_name, get_formspec( ) )
 end
 
 local function show_results_viewer( player_name, source, region, radius, results )
@@ -76,17 +95,20 @@ local function show_results_viewer( player_name, source, region, radius, results
 		if fields.quit then return end
 
 		if fields.export then
-			--
+			open_exporter( player_name, results )
+
 		elseif fields.prev then
 			if page_idx > 1 then
 				page_idx = page_idx - 1
 				minetest.update_form( player_name, get_formspec( ) )
 			end
+
 		elseif fields.next then
 			if page_idx < #results / page_size then
 				page_idx = page_idx + 1
 				minetest.update_form( player_name, get_formspec( ) )
 			end
+
 		else
 			local fname = next( fields, nil )     -- use next since we only care about the name of a single button
 			local fval = string.match( fname, "show:(.+)" )
@@ -119,8 +141,12 @@ minetest.register_chatcommand( "finder", {
 		local player = minetest.get_player_by_name( player_name )
 		local args = string.split( param, " " )
 
+		if not minetest.create_form then 
+			return false, "This function requires the ActiveFormspecs Mod be installed."
+		end
+
 		if #args == 0 then
-			return false "Invalid parameters supplied!"
+			return false, "Invalid parameters supplied!"
 
 		elseif args[ 1 ] == "objects" then
 			local region, radius, player_names, entity_globs, search_logic, has_parent
@@ -201,13 +227,3 @@ minetest.register_chatcommand( "finder", {
 		return true
 	end
 } )
-
---[[
-find_objects_in_sphere( pos, 5, { }, { "!group:*" } )		find only entities that do not have a group
-find_objects_in_sphere( pos, 5, { "!sorcerykid" }, { } )	find only players not named 'sorcerykid'
-find_objects_in_sphere( pos, 5, { }, { "mobs:*" } )		find only entities registered with the Mobs Redo API
-find_objects_in_sphere( pos, 5, { "__builtin:item" ) 		find only dropped items
-find_objects_in_sphere( pos, 5, { ":*:*" )			same as above, but somewhat obfuscated
-find_objects_in_sphere( pos, 5, { "group:dropped_item",":default:apple", "all" )	find only dropped items named "default:apple"
-find_objects_in_sphere( pos, 5, { "group:mob", "!group:animal" }, "all" ) 		find only entities that are not in the "mob_animal" group but are in the "mob" group
-]]

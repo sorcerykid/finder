@@ -73,7 +73,7 @@ minetest.find_objects_in_sphere = function ( sphere_pos, sphere_radius, player_n
 		if obj:is_player( ) then
 			local name = obj:get_player_name( )
 			local dist = vector.distance( sphere_pos, pos )
-			local elem = { obj = obj, dist = dist, name = name, type = "player" }
+			local elem = { obj = obj, pos = pos, dist = dist, name = name, type = "player" }
 
 			if not player_names then
 				-- always include players, if `player_names` is nil
@@ -94,7 +94,7 @@ minetest.find_objects_in_sphere = function ( sphere_pos, sphere_radius, player_n
 			local groups = entity.groups or { }
 			local name = entity.name
 			local dist = vector.distance( sphere_pos, pos )
-			local elem = { obj = obj, dist = dist, name = name, type = "entity", groups = groups }
+			local elem = { obj = obj, pos = pos, dist = dist, name = name, type = "entity", groups = groups }
 
 			if not entity_globs then
 				-- always include entities, if `entity_globs` is nil

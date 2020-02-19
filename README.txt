@@ -19,10 +19,10 @@ The following library functions are available:
  * minetest.find_nodes_in_sphere( pos, radius, node_names )
    This is a wrapper function for minetest.find_nodes_in_area( ) that provides a means to
    locate nodes by name in a spherical region. The output is a table:
+    * name = the name of the node
     * node - the node
-    * ndef - the node definition
     * pos - the node position
-    * dist - the distance to the node position
+    * dist - the distance to the node
     * groups - the groups belonging to the node
 
  * minetest.find_nodes_in_cuboid( pos, radius, height, node_names )
@@ -33,9 +33,17 @@ The following library functions are available:
            pos, radius, player_names, entity_globs, search_logic, search_options )
    Since the builtin API of Minetest does not provide a means to locate entities by name
    or group, this function fulfills that purpose. It supports the same two boolean search
-   modes as minetest.search_registered_nodes( ). If either the player names or entity 
-   globs are nil, then all players or entities in the given range will match accordingly. 
-   However, supplying an empty list will match none.
+   modes as minetest.search_registered_nodes( ). The output is a table:
+    * name - the name of the entity or player
+    * obj - the ObjectRef of the entity or player
+    * pos - the object position
+    * dist - the distance to the object
+    * groups - the groups belonging to the entity (nil for players)
+
+   If either the player names or entity globs are nil, then all players or entities in the 
+   given range will match accordingly. However, supplying an empty list will match none.
+   Currently, the only supported search option is 'is_attached' which is a boolean
+   indicating whether attached entities should be included.
 
 If you are already familiar with globs, then you should have no difficulties working with
 the functions above. The syntax is very similar, but with only a few additions:
@@ -56,9 +64,9 @@ with a ":" as this example demonstrates:
    > minetest.find_objects_in_sphere( player:get_pos( ), 10.0,
    >         { "__builtin:item", ":buckets:bucket_*" }, "all" )
 
-While Minetest does not formally recognize the concept of groups for entitites, I've
-nonetheless included support for group-searches. If you wish to use this feature, then it
-will be necessary to add a "groups" property to your entity definitions.
+While Minetest does not formally recognize the concept of groups for entities, I've
+nonetheless included support for group-searches. In order to use this feature, it will be 
+necessary to add a "groups" property to your entity definitions.
 
 You'll want to start by modifying "builtin/game/item_entity.lua" as follows:
 
@@ -92,8 +100,15 @@ currently. But you are welcome to devise your own, depending on your needs.
     - group:wielded_item
     - group:falling_node
 
- o Class of entitites that are non-interactive
+ o Class of entities that are for visualization (including signs, markers, etc.)
     - group:visual
+
+ o Subclass of 'group:visual' entities
+    - group:sign
+    - group:marker
+
+ o Class of entities that are for internal use
+    - group:hidden
 
  o Class of entities that are capable of motion
     - group:mobile
@@ -106,24 +121,36 @@ currently. But you are welcome to devise your own, depending on your needs.
     - group:human
     - group:monster
     - group:alien
-    - group:walks
-    - group:swims
-    - group:flies
+    - group:walking
+    - group:swimming
+    - group:flying
+
+The "/find" chat command offers a convenient front-end to the search functionality.
+
+   /finder objects sphere [radius] [player_names] [entity_globs] [search_logic]
+
+   /finder nodes [region] [radius] [node_globs] [search_logic]
+
+For node searches, the region can be either "sphere" or "cuboid". The player names,
+entity globs, and node_globs lists should be surrounded by braces. To eliminate any
+parameter simply specify "nil". For example, to find all nearby dirt nodes, enter
+
+   /finder nodes sphere 5.0 {default:dirt*} nil 
 
 Just a few closing thoughts...
 
-I've taken great care to optimize the functions above as much as possible. But
-given that they are extending the CPP interface, they can only perform as well
-as the inputs provided. So the most restrictive searches are always preferable.
+I've taken great care to optimize the functions above as much as possible. But given 
+that they are extending the CPP interface, they can only perform as well as the inputs 
+provided. So the most restrictive searches are always preferable.
 
-As an added word of advice, if you'll be performing multiple searches on nodes
-using the same globs, then the output of minetest.search_registered_nodes( )
-should be cached in your mod for efficiency. After all, the resulting node
-names will never change, so regenerating the list each time is unnecessary.
+As an added word of advice, if you'll be performing multiple searches on nodes using the 
+same globs, then the output of minetest.search_registered_nodes( ) should be cached in 
+your mod for efficiency. After all, the resulting node names will never change, so 
+regenerating the list each time is unnecessary.
 
-Unfortunately, such an optimization is not possible with entities due to the
-nature of the search algorithm (as entities are post-processed). Ideally, all
-of these functions may at some point be ported to CPP.
+Unfortunately, such an optimization is not possible with entities due to the nature of 
+the search algorithm (as entities are post-processed). Ideally, all of these functions 
+may at some point be ported to CPP.
 
 
 Repository
@@ -135,6 +162,17 @@ Browse source code...
 Download archive...
   https://bitbucket.org/sorcerykid/finder/get/master.zip
   https://bitbucket.org/sorcerykid/finder/get/master.tar.gz
+
+Compatability
+----------------------
+
+Minetest 0.4.15+ required
+
+Dependencies
+----------------------
+
+ActiveFormspecs Mod (optional)
+  https://bitbucket.org/sorcerykid/formspecs
 
 Installation
 ----------------------
