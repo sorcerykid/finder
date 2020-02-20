@@ -2,20 +2,28 @@
 -- Minetest :: Advanced Rangefinder Mod v1.0 (finder)
 --
 -- See README.txt for licensing and other information.
--- Copyright (c) 2016-2020, Leslie E. Krause
+-- Copyright (c) 2020, Leslie E. Krause
 --
 -- ./games/minetest_game/mods/finder/init.lua
 --------------------------------------------------------
-
----------------------
--- private methods --
----------------------
 
 local converter = {
 	["*"] = "[^:]*",
 	["+"] = "[^:]+",
 	["?"] = "[^:]?",
 }
+
+---------------------
+-- private methods --
+---------------------
+
+local function hash_values( list )
+	local map = { }
+	for idx, val in ipairs( list ) do
+		map[ val ] = true
+	end
+	return map
+end
 
 local function compare( text, prefix, suffix )
 	return string.find( text, "^" .. prefix .. ":" .. suffix .. "$" ) ~= nil
@@ -51,9 +59,122 @@ local function parse_entity_globs( entity_globs )
 	return raw_entity_globs
 end
 
+local function search_registered_assets_raw( registered_assets, asset_globs, search_logic )
+	local match_bool, match_func
+	local raw_asset_globs = { }
+	local asset_names = { }
+
+	if type( search_logic ) == "function" then
+		match_func = search_logic
+	else
+		match_bool = ( { any = true, all = false } )[ search_logic or "any" ]
+	end
+
+	for _, val in ipairs( asset_globs ) do
+		local res = { string.match( val, "^(!?)([?+*a-z0-9_]*):([?+*a-z0-9_]*)$" ) }
+		local prefix = string.gsub( res[ 2 ], ".", converter )
+		local suffix = string.gsub( res[ 3 ], ".", converter )
+		local is_inverse = res[ 1 ] == "!"   -- match inverse logic?
+
+		table.insert( raw_asset_globs, { prefix = prefix, suffix = suffix, is_inverse = is_inverse } )
+	end
+
+	for name, def in pairs( registered_assets ) do
+		local groups = def.groups or { }
+
+		if not match_func then
+			local is_match = false
+
+			for _, v in ipairs( raw_asset_globs ) do
+				if v.prefix == "group" then
+					is_match = compare_groups( groups, v.suffix ) ~= v.is_inverse
+				else
+					is_match = compare( name, v.prefix, v.suffix ) ~= v.is_inverse
+				end
+				if is_match == match_bool then break end   -- short circuit boolean logic
+			end
+
+			if is_match then
+				table.insert( asset_names, name )
+			end
+		else
+			local matches = { }
+
+			for _, v in ipairs( raw_asset_globs ) do
+				if v.prefix == "group" then
+					table.insert( matches, compare_groups( groups, v.suffix ) ~= v.is_inverse )
+				else
+					table.insert( matches, compare( name, v.prefix, v.suffix ) ~= v.is_inverse )
+				end
+			end
+
+			if match_func( unpack( matches ) ) then
+				table.insert( asset_names, name )
+			end
+		end
+	end
+
+	return asset_names
+end
+
 --------------------
 -- public methods --
 --------------------
+
+minetest.locator = function ( results, color, exptime )
+	if not color then color = "white" end
+	if not exptime then exptime = 4.0 end
+
+	for _, data in ipairs( results ) do
+		if data.type == "player" or data.type == "entity" then
+		        minetest.add_particle( {
+                		pos = data.pos,
+		                vel = { x = 0, y = 0, z = 0 },
+                		acc = { x = 0, y = 0, z = 0 },
+		                exptime = exptime,
+                		size = 8.0,
+		                collisiondetection = false,
+                		vertical = true,
+		                texture = "wool_" .. color .. ".png",
+		        } )
+		end
+	end
+end
+
+minetest.find_entities_in_sphere = function ( sphere_pos, sphere_radius, has_players, entity_names, options )
+	assert( type( sphere_pos ) == "table" )
+	assert( type( sphere_radius ) == "number" )
+	assert( type( has_players ) == "boolean" )
+	assert( type( entity_names ) == "table" )
+
+	local results = { }
+	local entities = hash_values( entity_names )
+
+	if not options then options = { } end
+
+	for _, obj in ipairs( minetest.get_objects_inside_radius( sphere_pos, sphere_radius ) ) do
+		local pos = obj:getpos( )
+
+		if obj:is_player( ) then
+			local name = obj:get_player_name( )
+			local dist = vector.distance( sphere_pos, pos )
+			local elem = { obj = obj, pos = pos, dist = dist, name = name, type = "player" }
+
+			table.insert( results, elem )
+
+		elseif not obj:get_attach( ) or options.has_parent then
+			local name = obj:get_luaentity( ).name
+			local dist = vector.distance( sphere_pos, pos )
+			local elem = { obj = obj, pos = pos, dist = dist, name = name, type = "entity" }
+
+			if entities[ name ] then
+				table.insert( results, elem )
+			end
+		end
+	end
+
+	return results
+end
 
 minetest.find_objects_in_sphere = function ( sphere_pos, sphere_radius, player_names, entity_globs, search_logic, options )
 	assert( type( sphere_pos ) == "table" )
@@ -61,11 +182,17 @@ minetest.find_objects_in_sphere = function ( sphere_pos, sphere_radius, player_n
 	assert( player_names == nil or type( player_names ) == "table" )
 	assert( entity_globs == nil or type( entity_globs ) == "table" )
 
-	local match_bool = ( { any = true, all = false } )[ search_logic or "any" ]	-- default to logical OR search
 	local raw_entity_globs = parse_entity_globs( entity_globs )
+	local match_func, match_bool
 	local results = { }
 
 	if not options then options = { } end
+
+	if type( search_logic ) == "function" then
+		match_func = search_logic
+	else
+		match_bool = ( { any = true, all = false } )[ search_logic or "any" ]
+	end
 
 	for _, obj in ipairs( minetest.get_objects_inside_radius( sphere_pos, sphere_radius ) ) do
 		local pos = obj:getpos( )
@@ -102,7 +229,6 @@ minetest.find_objects_in_sphere = function ( sphere_pos, sphere_radius, player_n
 			else
 				local item_name = ""
 				local item_groups = { }
-				local is_found = false
 
 				if groups.item then
 					-- any entity in the `item` group must have an `itemstring` property
@@ -112,17 +238,37 @@ minetest.find_objects_in_sphere = function ( sphere_pos, sphere_radius, player_n
 					item_groups = defs[ item_name ] and defs[ item_name ].groups or { }
 				end
 
-				for _, v in ipairs( raw_entity_globs ) do
-					if v.prefix == "group" then
-						is_found = compare_groups( v.is_dropped and item_groups or groups, v.suffix ) ~= v.is_inverse
-					else
-						is_found = compare( v.is_dropped and item_name or name, v.prefix, v.suffix ) ~= v.is_inverse
-					end
-					if is_found == match_bool then break end   -- short circuit boolean logic
-				end
+				if not match_func then
+					local is_match = false
 
-				if is_found then
-					table.insert( results, elem )
+					for _, v in ipairs( raw_entity_globs ) do
+						if v.prefix == "group" then
+							is_match = compare_groups( v.is_dropped and item_groups or groups, v.suffix ) ~= v.is_inverse
+						else
+							is_match = compare( v.is_dropped and item_name or name, v.prefix, v.suffix ) ~= v.is_inverse
+						end
+						if is_match == match_bool then break end   -- short circuit boolean logic
+					end
+
+					if is_match then
+						table.insert( results, elem )
+					end
+				else
+					local matches = { }
+
+					for _, v in ipairs( raw_entity_globs ) do
+						if v.prefix == "group" then
+							table.insert( matches,
+								compare_groups( v.is_dropped and item_groups or groups, v.suffix ) ~= v.is_inverse )
+						else
+							table.insert( matches,
+								compare( v.is_dropped and item_name or name, v.prefix, v.suffix ) ~= v.is_inverse )
+						end
+					end
+
+					if match_func( unpack( matches ) ) then
+						table.insert( results, elem )
+					end
 				end
 			end
 		end
@@ -131,42 +277,18 @@ minetest.find_objects_in_sphere = function ( sphere_pos, sphere_radius, player_n
 	return results
 end
 
+minetest.search_registered_entities = function ( entity_globs, search_logic )
+	assert( type( entity_globs ) == "table" )
+	assert( search_logic == nil or type( search_logic ) == "string" or type( search_logic ) == "function" )
+
+	return search_registered_assets_raw( minetest.registered_entities, entity_globs, search_logic )
+end
+
 minetest.search_registered_nodes = function ( node_globs, search_logic )
 	assert( type( node_globs ) == "table" )
-	assert( search_logic == nil or type( search_logic ) == "string" )
+	assert( search_logic == nil or type( search_logic ) == "string" or type( search_logic ) == "function" )
 
-	local match_bool = ( { any = true, all = false } )[ search_logic or "any" ]   -- default to logical OR search
-	local raw_node_globs = { }
-	local node_names = { }
-
-	for _, val in ipairs( node_globs ) do
-		local res = { string.match( val, "^(!?)([?+*a-z0-9_]*):([?+*a-z0-9_]*)$" ) }
-		local prefix = string.gsub( res[ 2 ], ".", converter )
-		local suffix = string.gsub( res[ 3 ], ".", converter )
-		local is_inverse = res[ 1 ] == "!"   -- match inverse logic?
-
-		table.insert( raw_node_globs, { prefix = prefix, suffix = suffix, is_inverse = is_inverse } )
-	end
-
-	for name, def in pairs( minetest.registered_nodes ) do
-		local groups = def.groups
-		local is_found = false
-
-		for _, v in ipairs( raw_node_globs ) do
-			if v.prefix == "group" then
-				is_found = compare_groups( groups, v.suffix ) ~= v.is_inverse
-			else
-				is_found = compare( name, v.prefix, v.suffix ) ~= v.is_inverse
-			end
-			if is_found == match_bool then break end   -- short circuit boolean logic
-		end
-
-		if is_found then
-			table.insert( node_names, name )
-		end
-	end
-
-	return node_names
+	return search_registered_assets_raw( minetest.registered_nodes, node_lobs, search_logic )
 end
 
 minetest.find_nodes_in_sphere = function ( sphere_pos, sphere_radius, node_names )

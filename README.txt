@@ -1,4 +1,4 @@
-Advanced Rangefinder Mod v1.0
+Advanced Rangefinder Mod v1.1
 By Leslie E. Krause
 
 Advanced Rangefinder extends the Minetest API with more powerful search capabilities for
@@ -13,8 +13,14 @@ The following library functions are available:
     * "any" for logical OR matching (default)
     * "all" for logical AND matching
 
+   For more advanced searches, a matching function may be used instead. Each parameter
+   corresponds to the respective node glob and will be assigned true or false depending
+   on the comparison result. This function should return true for a successful match.
+
    Example:
-   > minetest.search_registered_nodes( { "!default:lava*", "group:liquid" }, "all" )
+   > node_globs = { "group:liquid", "!default:lava_source", "!default:water_source" }
+   > match_func = function ( a, b, c ) return a and ( b or c ) end
+   > res = minetest.search_registered_nodes( node_globs, match_func )
 
  * minetest.find_nodes_in_sphere( pos, radius, node_names )
    This is a wrapper function for minetest.find_nodes_in_area( ) that provides a means to
@@ -29,8 +35,8 @@ The following library functions are available:
    This is a wrapper function for minetest.find_nodes_in_area( ) that provides a means to
    locate nodes by name in a cubicle region. The output is the same as above.
 
- * minetest.find_objects_in_sphere(
-           pos, radius, player_names, entity_globs, search_logic, search_options )
+ * minetest.find_objects_in_sphere( pos, radius, player_names, entity globs,
+           search_logic, search_options )
    Since the builtin API of Minetest does not provide a means to locate entities by name
    or group, this function fulfills that purpose. It supports the same two boolean search
    modes as minetest.search_registered_nodes( ). The output is a table:
@@ -44,6 +50,14 @@ The following library functions are available:
    given range will match accordingly. However, supplying an empty list will match none.
    Currently, the only supported search option is 'is_attached' which is a boolean
    indicating whether attached entities should be included.
+
+ * minetest.search_registered_entities( entity_globs, search_logic )
+   Returns the names of all registered entities that match the given list of globs. The 
+   output of this function may be passed to minetest.find_entities_in_sphere( ) below.
+
+ * minetest.find_entities_in_sphere( pos, radius, entity_names )
+   This is a lightweight alternative to minetest.find_objects_in_sphere( ). It expects a
+   list of entity names which may be obtained via minetest.search_registered_entities( ).
 
 If you are already familiar with globs, then you should have no difficulties working with
 the functions above. The syntax is very similar, but with only a few additions:
@@ -107,9 +121,6 @@ currently. But you are welcome to devise your own, depending on your needs.
     - group:sign
     - group:marker
 
- o Class of entities that are for internal use
-    - group:hidden
-
  o Class of entities that are capable of motion
     - group:mobile
 
@@ -139,18 +150,14 @@ parameter simply specify "nil". For example, to find all nearby dirt nodes, ente
 
 Just a few closing thoughts...
 
-I've taken great care to optimize the functions above as much as possible. But given 
+I've taken great care to optimize the functions above as much as possible. However, given 
 that they are extending the CPP interface, they can only perform as well as the inputs 
 provided. So the most restrictive searches are always preferable.
 
-As an added word of advice, if you'll be performing multiple searches on nodes using the 
-same globs, then the output of minetest.search_registered_nodes( ) should be cached in 
-your mod for efficiency. After all, the resulting node names will never change, so 
-regenerating the list each time is unnecessary.
-
-Unfortunately, such an optimization is not possible with entities due to the nature of 
-the search algorithm (as entities are post-processed). Ideally, all of these functions 
-may at some point be ported to CPP.
+Also keep in mind, if you need to perform multiple searches for the same node globs or 
+entity globs, then be sure to cache the output of minetest.search_registered_nodes( ) or 
+minetest.search_registered_entities( ) for efficiency. After all, the resulting node and
+and entity names won't change, so regenerating these lists every time is unnecessary.
 
 
 Repository
